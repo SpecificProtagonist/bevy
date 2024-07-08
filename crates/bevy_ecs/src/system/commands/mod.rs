@@ -7,8 +7,9 @@ use crate::{
     component::ComponentId,
     entity::{Entities, Entity},
     system::{RunSystemWithInput, SystemId},
-    world::command_queue::RawCommandQueue,
-    world::{Command, CommandQueue, EntityWorldMut, FromWorld, World},
+    world::{
+        command_queue::RawCommandQueue, Command, CommandQueue, EntityWorldMut, FromWorld, World,
+    },
 };
 use bevy_utils::tracing::{error, info};
 pub use parallel_scope::*;
@@ -340,6 +341,7 @@ impl<'w, 's> Commands<'w, 's> {
     ///
     /// - [`spawn_empty`](Self::spawn_empty) to spawn an entity without any components.
     /// - [`spawn_batch`](Self::spawn_batch) to spawn entities with a bundle each.
+    #[track_caller]
     pub fn spawn<T: Bundle>(&mut self, bundle: T) -> EntityCommands {
         let mut e = self.spawn_empty();
         e.insert(bundle);
@@ -1202,9 +1204,10 @@ fn despawn(entity: Entity, world: &mut World) {
 /// An [`EntityCommand`] that adds the components in a [`Bundle`] to an entity.
 #[track_caller]
 fn insert<T: Bundle>(bundle: T) -> impl EntityCommand {
+    let caller = *core::panic::Location::caller();
     move |entity: Entity, world: &mut World| {
         if let Some(mut entity) = world.get_entity_mut(entity) {
-            entity.insert(bundle);
+            entity.insert_with_caller(bundle, caller);
         } else {
             panic!("error[B0003]: Could not insert a bundle (of type `{}`) for entity {:?} because it doesn't exist in this World. See: https://bevyengine.org/learn/errors/#b0003", std::any::type_name::<T>(), entity);
         }
@@ -1214,9 +1217,10 @@ fn insert<T: Bundle>(bundle: T) -> impl EntityCommand {
 /// An [`EntityCommand`] that attempts to add the components in a [`Bundle`] to an entity.
 #[track_caller]
 fn try_insert(bundle: impl Bundle) -> impl EntityCommand {
+    let caller = *core::panic::Location::caller();
     move |entity, world: &mut World| {
         if let Some(mut entity) = world.get_entity_mut(entity) {
-            entity.insert(bundle);
+            entity.insert_with_caller(bundle, caller);
         }
     }
 }

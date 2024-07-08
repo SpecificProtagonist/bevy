@@ -644,11 +644,24 @@ impl<'w> BundleInserter<'w> {
         location: EntityLocation,
         bundle: T,
     ) -> EntityLocation {
+        self.insert_with_caller(entity, location, bundle, *core::panic::Location::caller())
+    }
+
+    /// # Safety
+    /// `entity` must currently exist in the source archetype for this inserter. `location`
+    /// must be `entity`'s location in the archetype. `T` must match this [`BundleInfo`]'s type
+    #[inline]
+    pub(crate) unsafe fn insert_with_caller<T: DynamicBundle>(
+        &mut self,
+        entity: Entity,
+        location: EntityLocation,
+        bundle: T,
+        caller: core::panic::Location<'static>,
+    ) -> EntityLocation {
         let bundle_info = self.bundle_info.as_ref();
         let add_bundle = self.add_bundle.as_ref();
         let table = self.table.as_mut();
         let archetype = self.archetype.as_mut();
-        let caller = *core::panic::Location::caller();
 
         let (new_archetype, new_location) = match &mut self.result {
             InsertBundleResult::SameArchetype => {
