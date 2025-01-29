@@ -2,6 +2,7 @@
 
 use bevy::{
     ecs::{
+        change_detection::ChangeDetectionType,
         component::{ComponentDescriptor, ComponentId, HookContext, StorageType},
         world::DeferredWorld,
     },
@@ -152,6 +153,7 @@ fn demo_3(world: &mut World) {
                     Layout::array::<u8>(size).unwrap(),
                     None,
                     false,
+                    ChangeDetectionType::NoChangeDetection,
                 )
             };
 

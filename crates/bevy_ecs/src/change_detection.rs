@@ -2,6 +2,7 @@
 
 use crate::{
     component::{Tick, TickCells},
+    prelude::Component,
     ptr::PtrMut,
     resource::Resource,
 };
@@ -77,7 +78,9 @@ pub trait DetectChanges {
     fn changed_by(&self) -> &'static Location<'static>;
 }
 
-/// Types that implement reliable change detection.
+/// Types for which change tracking information may be written.
+///
+/// To read those changes back, see [`DetectChanges`].
 ///
 /// ## Example
 /// Using types that implement [`DetectChangesMut`], such as [`ResMut`], provide
@@ -106,7 +109,7 @@ pub trait DetectChanges {
 ///    resource.0 = 42; // triggers change detection via [`DerefMut`]
 /// }
 /// ```
-pub trait DetectChangesMut: DetectChanges {
+pub trait DetectChangesMut {
     /// The type contained within this smart pointer
     ///
     /// For example, for `ResMut<T>` this would be `T`.
@@ -320,6 +323,21 @@ pub trait DetectChangesMut: DetectChanges {
     }
 }
 
+impl<'w, T> DetectChangesMut for &'w mut T
+where
+    T: Component<ChangeDetection = NoChangeDetection>,
+{
+    type Inner = T;
+
+    fn set_changed(&mut self) {}
+
+    fn set_last_changed(&mut self, _last_changed: Tick) {}
+
+    fn bypass_change_detection(&mut self) -> &mut Self::Inner {
+        self
+    }
+}
+
 macro_rules! change_detection_impl {
     ($name:ident < $( $generics:tt ),+ >, $target:ty, $($traits:ident)?) => {
         impl<$($generics),* : ?Sized $(+ $traits)?> DetectChanges for $name<$($generics),*> {
@@ -420,22 +438,137 @@ macro_rules! change_detection_mut_impl {
     };
 }
 
+/// A mutable typed smart pointer, possibly with change detection.
+pub trait MutRef<'w>: DetectChangesMut + DerefMut + Deref<Target: ?Sized> {
+    /// Self, but with different generic parameters.
+    // We cannot require Mapped: MutRef here, as that will lead to an infinite recursion
+    // during trait solving.
+    type Mapped<'a, U>
+    where
+        'w: 'a,
+        Self: 'a,
+        U: ?Sized + 'a;
+
+    /// Consume `self` and return a mutable reference to the
+    /// contained value while marking `self` as "changed".
+    fn into_inner(self) -> &'w mut Self::Target;
+
+    /// Returns a `Mut<>` with a smaller lifetime.
+    /// This is useful if you have `&mut Self` but you need a `Self`.
+    fn reborrow<'wshort>(&'wshort mut self) -> Self::Mapped<'wshort, Self::Target>
+    where
+        'w: 'wshort;
+
+    /// Maps to an inner value by applying a function to the contained reference, without flagging a change.
+    ///
+    /// You should never modify the argument passed to the closure -- if you want to modify the data
+    /// without flagging a change, consider using [`DetectChangesMut::bypass_change_detection`] to make your intent explicit.
+    ///
+    /// ```
+    /// # use bevy_ecs::prelude::*;
+    /// # #[derive(PartialEq)] pub struct Vec2;
+    /// # impl Vec2 { pub const ZERO: Self = Self; }
+    /// # #[derive(Component)] pub struct Transform { translation: Vec2 }
+    /// // When run, zeroes the translation of every entity.
+    /// fn reset_positions(mut transforms: Query<&mut Transform>) {
+    ///     for transform in &mut transforms {
+    ///         // We pinky promise not to modify `t` within the closure.
+    ///         // Breaking this promise will result in logic errors, but will never cause undefined behavior.
+    ///         let mut translation = transform.map_unchanged(|t| &mut t.translation);
+    ///         // Only reset the translation if it isn't already zero;
+    ///         translation.set_if_neq(Vec2::ZERO);
+    ///     }
+    /// }
+    /// # bevy_ecs::system::assert_is_system(reset_positions);
+    /// ```
+    fn map_unchanged<U: ?Sized>(
+        self,
+        f: impl FnOnce(&mut Self::Target) -> &mut U,
+    ) -> Self::Mapped<'w, U>;
+
+    /// Optionally maps to an inner value by applying a function to the contained reference.
+    /// This is useful in a situation where you need to convert a `Mut<T>` to a `Mut<U>`, but only if `T` contains `U`.
+    ///
+    /// As with `map_unchanged`, you should never modify the argument passed to the closure.
+    fn filter_map_unchanged<U: ?Sized>(
+        self,
+        f: impl FnOnce(&mut Self::Target) -> Option<&mut U>,
+    ) -> Option<Self::Mapped<'w, U>>;
+
+    /// Allows you access to the dereferenced value of this pointer without immediately
+    /// triggering change detection.
+    fn as_deref_mut<'wshort>(
+        &'wshort mut self,
+    ) -> <Self::Mapped<'wshort, Self::Target> as MutRef<'wshort>>::Mapped<
+        'wshort,
+        <Self::Target as Deref>::Target,
+    >
+    where
+        'w: 'wshort,
+        Self::Target: DerefMut,
+        Self::Mapped<'wshort, Self::Target>: MutRef<'wshort, Target = Self::Target>,
+        <Self::Mapped<'wshort, Self::Target> as MutRef<'wshort>>::Mapped<
+            'wshort,
+            <Self::Target as Deref>::Target,
+        >: MutRef<'wshort, Target = <Self::Target as Deref>::Target>,
+    {
+        self.reborrow()
+            .map_unchanged(|v| <Self::Target as DerefMut>::deref_mut(v))
+    }
+}
+
+impl<'w, T> MutRef<'w> for &'w mut T
+where
+    T: Component<ChangeDetection = NoChangeDetection>,
+{
+    type Mapped<'a, U>
+        = &'a mut U
+    where
+        'w: 'a,
+        Self: 'a,
+        U: ?Sized + 'a;
+
+    fn into_inner(self) -> &'w mut T {
+        self
+    }
+
+    fn reborrow<'wshort>(&'wshort mut self) -> &'wshort mut T
+    where
+        'w: 'wshort,
+    {
+        self
+    }
+
+    fn map_unchanged<U: ?Sized>(self, f: impl FnOnce(&mut T) -> &mut U) -> &'w mut U {
+        f(self)
+    }
+
+    fn filter_map_unchanged<U: ?Sized>(
+        self,
+        f: impl FnOnce(&mut T) -> Option<&mut U>,
+    ) -> Option<&'w mut U> {
+        f(self)
+    }
+}
+
 macro_rules! impl_methods {
-    ($name:ident < $( $generics:tt ),+ >, $target:ty, $($traits:ident)?) => {
-        impl<$($generics),* : ?Sized $(+ $traits)?> $name<$($generics),*> {
-            /// Consume `self` and return a mutable reference to the
-            /// contained value while marking `self` as "changed".
+    ($name:ident<'w, T>, $($traits:ident)?) => {
+        impl<'w, T: ?Sized $(+ $traits)?> MutRef<'w> for $name<'w, T> {
+            type Mapped<'a, U> = Mut<'a, U>
+            where
+                'w: 'a,
+                U: ?Sized + 'a;
+
             #[inline]
-            pub fn into_inner(mut self) -> &'w mut $target {
+            fn into_inner(mut self) -> &'w mut T {
                 self.set_changed();
                 self.value
             }
 
-            /// Returns a `Mut<>` with a smaller lifetime.
-            /// This is useful if you have `&mut
-            #[doc = stringify!($name)]
-            /// <T>`, but you need a `Mut<T>`.
-            pub fn reborrow(&mut self) -> Mut<'_, $target> {
+            fn reborrow<'wshort>(&'wshort mut self) -> Mut<'wshort, T>
+            where
+                'w: 'wshort,
+            {
                 Mut {
                     value: self.value,
                     ticks: TicksMut {
@@ -449,29 +582,7 @@ macro_rules! impl_methods {
                 }
             }
 
-            /// Maps to an inner value by applying a function to the contained reference, without flagging a change.
-            ///
-            /// You should never modify the argument passed to the closure -- if you want to modify the data
-            /// without flagging a change, consider using [`DetectChangesMut::bypass_change_detection`] to make your intent explicit.
-            ///
-            /// ```
-            /// # use bevy_ecs::prelude::*;
-            /// # #[derive(PartialEq)] pub struct Vec2;
-            /// # impl Vec2 { pub const ZERO: Self = Self; }
-            /// # #[derive(Component)] pub struct Transform { translation: Vec2 }
-            /// // When run, zeroes the translation of every entity.
-            /// fn reset_positions(mut transforms: Query<&mut Transform>) {
-            ///     for transform in &mut transforms {
-            ///         // We pinky promise not to modify `t` within the closure.
-            ///         // Breaking this promise will result in logic errors, but will never cause undefined behavior.
-            ///         let mut translation = transform.map_unchanged(|t| &mut t.translation);
-            ///         // Only reset the translation if it isn't already zero;
-            ///         translation.set_if_neq(Vec2::ZERO);
-            ///     }
-            /// }
-            /// # bevy_ecs::system::assert_is_system(reset_positions);
-            /// ```
-            pub fn map_unchanged<U: ?Sized>(self, f: impl FnOnce(&mut $target) -> &mut U) -> Mut<'w, U> {
+            fn map_unchanged<U: ?Sized>(self, f: impl FnOnce(&mut T) -> &mut U) -> Mut<'w, U> {
                 Mut {
                     value: f(self.value),
                     ticks: self.ticks,
@@ -480,11 +591,7 @@ macro_rules! impl_methods {
                 }
             }
 
-            /// Optionally maps to an inner value by applying a function to the contained reference.
-            /// This is useful in a situation where you need to convert a `Mut<T>` to a `Mut<U>`, but only if `T` contains `U`.
-            ///
-            /// As with `map_unchanged`, you should never modify the argument passed to the closure.
-            pub fn filter_map_unchanged<U: ?Sized>(self, f: impl FnOnce(&mut $target) -> Option<&mut U>) -> Option<Mut<'w, U>> {
+            fn filter_map_unchanged<U: ?Sized>(self, f: impl FnOnce(&mut T) -> Option<&mut U>) -> Option<Mut<'w, U>> {
                 let value = f(self.value);
                 value.map(|value| Mut {
                     value,
@@ -493,15 +600,6 @@ macro_rules! impl_methods {
                     changed_by: self.changed_by,
                 })
             }
-
-            /// Allows you access to the dereferenced value of this pointer without immediately
-            /// triggering change detection.
-            pub fn as_deref_mut(&mut self) -> Mut<'_, <$target as Deref>::Target>
-                where $target: DerefMut
-            {
-                self.reborrow().map_unchanged(|v| v.deref_mut())
-            }
-
         }
     };
 }
@@ -712,7 +810,7 @@ where
 
 change_detection_impl!(ResMut<'w, T>, T, Resource);
 change_detection_mut_impl!(ResMut<'w, T>, T, Resource);
-impl_methods!(ResMut<'w, T>, T, Resource);
+impl_methods!(ResMut<'w, T>, Resource);
 impl_debug!(ResMut<'w, T>, Resource);
 
 impl<'w, T: Resource> From<ResMut<'w, T>> for Mut<'w, T> {
@@ -748,7 +846,7 @@ pub struct NonSendMut<'w, T: ?Sized + 'static> {
 
 change_detection_impl!(NonSendMut<'w, T>, T,);
 change_detection_mut_impl!(NonSendMut<'w, T>, T,);
-impl_methods!(NonSendMut<'w, T>, T,);
+impl_methods!(NonSendMut<'w, T>,);
 impl_debug!(NonSendMut<'w, T>,);
 
 impl<'w, T: 'static> From<NonSendMut<'w, T>> for Mut<'w, T> {
@@ -1004,7 +1102,7 @@ where
 
 change_detection_impl!(Mut<'w, T>, T,);
 change_detection_mut_impl!(Mut<'w, T>, T,);
-impl_methods!(Mut<'w, T>, T,);
+impl_methods!(Mut<'w, T>,);
 impl_debug!(Mut<'w, T>,);
 
 /// Unique mutable borrow of resources or an entity's component.
@@ -1244,6 +1342,157 @@ pub(crate) type MaybeThinSlicePtrLocation<'w> =
 #[cfg(not(feature = "track_location"))]
 pub(crate) type MaybeThinSlicePtrLocation<'w> = ();
 
+/// The change tracking for a [`Component`]. This can either be:
+/// * [`FineGrained`], which tracks mutable dereferences of this component per entity.
+///   You can use both [`Ref<T>`] and [`Mut<T>`] in a query, and using `&mut T` gives you a `Mut<T>`.
+/// * [`NoChangeDetection`], which doesn't track changes
+///   You cannot use `Ref<T>` nor `Mut<T>` in a query, and using `&mut T` gives you a `&mut T`.
+///
+// FIXME: Explain tradeofs when tick storage for NoChangeDetection has been removed
+// or more change detection types have been implemented.
+///
+/// When using the macro, it defaults to `NoChangeTracking`. You can use
+/// `#[component(change_detection = false)]` to switch to `NoChangeTracking`.
+///
+/// When manually implementing `Component` this is
+/// controlled through [`Component::ChangeDetection`].
+///
+/// # Examples
+///
+/// ```rust
+/// # use bevy_ecs::component::Component;
+/// #
+/// #[derive(Component)]
+/// #[component(change_detection = false)]
+/// struct UntrackedFoo;
+/// ```
+///
+/// [`Ref<T>`]: `Ref`
+/// [`Mut<T>`]: `Mut`
+pub trait ChangeDetection: private::Seal
+where
+    Self: 'static,
+{
+    /// Item obtained from using `&mut T` as a query parameter.
+    type DefaultWriteItem<'w, T: 'static>: MutRef<'w, Target = T>
+    where
+        T: Component<ChangeDetection = Self>;
+
+    /// Runtime representation of type.
+    const CHANGE_DETECTION: ChangeDetectionType;
+
+    #[doc(hidden)]
+    #[expect(
+        private_interfaces,
+        reason = "Public by necessity, will only be called from withing `bevy_ecs`"
+    )]
+    fn new<'w, T>(
+        value: &'w mut T,
+        ticks: TicksMut<'w>,
+        #[cfg(feature = "track_location")] changed_by: &'w mut &'static Location<'static>,
+    ) -> Self::DefaultWriteItem<'w, T>
+    where
+        T: Component<ChangeDetection = Self>;
+
+    // Needs to be part of the trait so variance works out.
+    #[doc(hidden)]
+    fn shrink<'wlong: 'wshort, 'wshort, T>(
+        item: Self::DefaultWriteItem<'wlong, T>,
+    ) -> Self::DefaultWriteItem<'wshort, T>
+    where
+        T: Component<ChangeDetection = Self>;
+}
+
+/// Enum of possible [`ChangeDetection`] types.
+#[derive(Copy, Clone)]
+pub enum ChangeDetectionType {
+    /// No change detection. See [`ChangeDetection`].
+    NoChangeDetection,
+    /// Per-entity change detection. See [`ChangeDetection`].
+    FineGrained,
+}
+
+mod private {
+    pub trait Seal {}
+}
+
+/// Track last mutable dereference of this component per entity.
+///
+/// See [`ChangeDetection`].
+pub struct FineGrained;
+impl private::Seal for FineGrained {}
+impl ChangeDetection for FineGrained {
+    type DefaultWriteItem<'w, T: 'static>
+        = Mut<'w, T>
+    where
+        T: Component<ChangeDetection = Self>;
+
+    const CHANGE_DETECTION: ChangeDetectionType = ChangeDetectionType::FineGrained;
+
+    #[expect(private_interfaces, reason = "ChangeDetection is sealed")]
+    #[inline(always)]
+    fn new<'w, T>(
+        value: &'w mut T,
+        ticks: TicksMut<'w>,
+        #[cfg(feature = "track_location")] changed_by: &'w mut &'static Location<'static>,
+    ) -> Self::DefaultWriteItem<'w, T>
+    where
+        T: Component<ChangeDetection = Self>,
+    {
+        Mut {
+            value,
+            ticks,
+            #[cfg(feature = "track_location")]
+            changed_by,
+        }
+    }
+
+    fn shrink<'wlong: 'wshort, 'wshort, T>(
+        item: Self::DefaultWriteItem<'wlong, T>,
+    ) -> Self::DefaultWriteItem<'wshort, T>
+    where
+        T: Component<ChangeDetection = Self>,
+    {
+        item
+    }
+}
+
+/// Do not track changes for this component.
+///
+/// See [`ChangeDetection`].
+pub struct NoChangeDetection;
+impl private::Seal for NoChangeDetection {}
+impl ChangeDetection for NoChangeDetection {
+    type DefaultWriteItem<'w, T: 'static>
+        = &'w mut T
+    where
+        T: Component<ChangeDetection = Self>;
+
+    const CHANGE_DETECTION: ChangeDetectionType = ChangeDetectionType::NoChangeDetection;
+
+    #[expect(private_interfaces, reason = "ChangeDetection is sealed")]
+    #[inline(always)]
+    fn new<'w, T>(
+        value: &'w mut T,
+        _ticks: TicksMut<'w>,
+        #[cfg(feature = "track_location")] _changed_by: &'w mut &'static Location<'static>,
+    ) -> Self::DefaultWriteItem<'w, T>
+    where
+        T: Component<ChangeDetection = Self>,
+    {
+        value
+    }
+
+    fn shrink<'wlong: 'wshort, 'wshort, T>(
+        item: Self::DefaultWriteItem<'wlong, T>,
+    ) -> Self::DefaultWriteItem<'wshort, T>
+    where
+        T: Component<ChangeDetection = Self>,
+    {
+        item
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use bevy_ecs_macros::Resource;
@@ -1259,6 +1508,7 @@ mod tests {
             Mut, NonSendMut, Ref, ResMut, TicksMut, CHECK_TICK_THRESHOLD, MAX_CHANGE_AGE,
         },
         component::{Component, ComponentTicks, Tick},
+        prelude::MutRef,
         system::{IntoSystem, Single, System},
         world::World,
     };

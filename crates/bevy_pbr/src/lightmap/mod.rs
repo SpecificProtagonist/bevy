@@ -35,6 +35,7 @@ use bevy_app::{App, Plugin};
 use bevy_asset::{load_internal_asset, AssetId, Handle};
 use bevy_derive::{Deref, DerefMut};
 use bevy_ecs::{
+    change_detection::MutRef,
     component::Component,
     entity::Entity,
     query::{Changed, Or},

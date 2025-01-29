@@ -1,4 +1,5 @@
 use crate::{
+    change_detection::FineGrained,
     component::{
         Component, ComponentCloneHandler, ComponentHooks, HookContext, Mutable, StorageType,
     },
@@ -15,6 +16,7 @@ pub struct ObservedBy(pub(crate) Vec<Entity>);
 impl Component for ObservedBy {
     const STORAGE_TYPE: StorageType = StorageType::SparseSet;
     type Mutability = Mutable;
+    type ChangeDetection = FineGrained;
 
     fn register_component_hooks(hooks: &mut ComponentHooks) {
         hooks.on_remove(|mut world, HookContext { entity, .. }| {

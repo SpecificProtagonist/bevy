@@ -4,6 +4,7 @@ use core::any::TypeId;
 
 use bevy_app::{App, Plugin};
 use bevy_ecs::{
+    change_detection::MutRef,
     entity::{hash_map::EntityHashMap, Entity},
     query::{Has, With},
     resource::Resource,

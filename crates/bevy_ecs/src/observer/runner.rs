@@ -2,6 +2,7 @@ use alloc::{boxed::Box, vec, vec::Vec};
 use core::any::Any;
 
 use crate::{
+    change_detection::FineGrained,
     component::{ComponentHook, ComponentHooks, ComponentId, HookContext, Mutable, StorageType},
     observer::{ObserverDescriptor, ObserverTrigger},
     prelude::*,
@@ -64,6 +65,7 @@ impl ObserverState {
 impl Component for ObserverState {
     const STORAGE_TYPE: StorageType = StorageType::SparseSet;
     type Mutability = Mutable;
+    type ChangeDetection = FineGrained;
 
     fn register_component_hooks(hooks: &mut ComponentHooks) {
         hooks.on_add(|mut world, HookContext { entity, .. }| {
@@ -317,6 +319,8 @@ impl Observer {
 impl Component for Observer {
     const STORAGE_TYPE: StorageType = StorageType::SparseSet;
     type Mutability = Mutable;
+    type ChangeDetection = FineGrained;
+
     fn register_component_hooks(hooks: &mut ComponentHooks) {
         hooks.on_add(|world, context| {
             let Some(observe) = world.get::<Self>(context.entity) else {

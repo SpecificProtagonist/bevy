@@ -7,6 +7,7 @@
 use crate::{
     change_detection::Mut,
     component::ComponentId,
+    prelude::MutRef,
     resource::Resource,
     world::{unsafe_world_cell::UnsafeWorldCell, World},
 };

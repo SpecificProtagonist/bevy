@@ -9,8 +9,8 @@ use syn::{
     punctuated::Punctuated,
     spanned::Spanned,
     token::{Comma, Paren},
-    Data, DataStruct, DeriveInput, ExprClosure, ExprPath, Fields, Ident, LitStr, Path, Result,
-    Token, Visibility,
+    Data, DataStruct, DeriveInput, ExprClosure, ExprPath, Fields, Ident, LitBool, LitStr, Path,
+    Result, Token, Visibility,
 };
 
 pub fn derive_event(input: TokenStream) -> TokenStream {
@@ -201,6 +201,11 @@ pub fn derive_component(input: TokenStream) -> TokenStream {
         .then_some(quote! { #bevy_ecs_path::component::Immutable })
         .unwrap_or(quote! { #bevy_ecs_path::component::Mutable });
 
+    let change_detection_type = attrs
+        .change_detection
+        .then_some(quote! { #bevy_ecs_path::change_detection::FineGrained })
+        .unwrap_or(quote! { #bevy_ecs_path::change_detection::NoChangeDetection });
+
     let clone_handler = if relationship_target.is_some() {
         quote!(#bevy_ecs_path::component::ComponentCloneHandler::ignore())
     } else {
@@ -216,6 +221,7 @@ pub fn derive_component(input: TokenStream) -> TokenStream {
         impl #impl_generics #bevy_ecs_path::component::Component for #struct_name #type_generics #where_clause {
             const STORAGE_TYPE: #bevy_ecs_path::component::StorageType = #storage;
             type Mutability = #mutable_type;
+            type ChangeDetection = #change_detection_type;
             fn register_required_components(
                 requiree: #bevy_ecs_path::component::ComponentId,
                 components: &mut #bevy_ecs_path::component::Components,
@@ -294,6 +300,8 @@ pub const ON_DESPAWN: &str = "on_despawn";
 
 pub const IMMUTABLE: &str = "immutable";
 
+pub const CHANGE_DETECTION: &str = "change_detection";
+
 struct Attrs {
     storage: StorageTy,
     requires: Option<Punctuated<Require, Comma>>,
@@ -305,6 +313,7 @@ struct Attrs {
     relationship: Option<Relationship>,
     relationship_target: Option<RelationshipTarget>,
     immutable: bool,
+    change_detection: bool,
 }
 
 #[derive(Clone, Copy)]
@@ -348,6 +357,7 @@ fn parse_component_attr(ast: &DeriveInput) -> Result<Attrs> {
         relationship: None,
         relationship_target: None,
         immutable: false,
+        change_detection: true,
     };
 
     let mut require_paths = HashSet::new();
@@ -382,6 +392,9 @@ fn parse_component_attr(ast: &DeriveInput) -> Result<Attrs> {
                     Ok(())
                 } else if nested.path.is_ident(IMMUTABLE) {
                     attrs.immutable = true;
+                    Ok(())
+                } else if nested.path.is_ident(CHANGE_DETECTION) {
+                    attrs.change_detection = nested.value()?.parse::<LitBool>()?.value;
                     Ok(())
                 } else {
                     Err(nested.error("Unsupported attribute"))

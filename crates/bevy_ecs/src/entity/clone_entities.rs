@@ -424,12 +424,14 @@ impl EntityCloner {
 /// ```
 /// # use bevy_ecs::prelude::*;
 /// # use bevy_ecs::component::{StorageType, component_clone_via_clone, ComponentCloneHandler, Mutable};
+/// # use bevy_ecs::change_detection::NoChangeDetection;
 /// #[derive(Clone)]
 /// struct SomeComponent;
 ///
 /// impl Component for SomeComponent {
 ///     const STORAGE_TYPE: StorageType = StorageType::Table;
 ///     type Mutability = Mutable;
+///     type ChangeDetection = NoChangeDetection;
 ///     fn get_component_clone_handler() -> ComponentCloneHandler {
 ///         ComponentCloneHandler::clone_handler::<Self>()
 ///     }
@@ -717,6 +719,7 @@ mod tests {
     use super::ComponentCloneCtx;
     use crate::{
         self as bevy_ecs,
+        change_detection::ChangeDetectionType,
         component::{Component, ComponentCloneHandler, ComponentDescriptor, StorageType},
         entity::EntityCloneBuilder,
         world::{DeferredWorld, World},
@@ -1129,6 +1132,7 @@ mod tests {
                 layout,
                 None,
                 true,
+                ChangeDetectionType::NoChangeDetection,
             )
         };
         let component_id = world.register_component_with_descriptor(descriptor);

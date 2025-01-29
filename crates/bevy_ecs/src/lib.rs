@@ -73,7 +73,7 @@ pub mod prelude {
     #[doc(hidden)]
     pub use crate::{
         bundle::Bundle,
-        change_detection::{DetectChanges, DetectChangesMut, Mut, Ref},
+        change_detection::{DetectChanges, DetectChangesMut, Mut, MutRef, Ref},
         component::{require, Component},
         entity::{Entity, EntityBorrow, EntityMapper},
         event::{Event, EventMutator, EventReader, EventWriter, Events},
@@ -131,7 +131,7 @@ mod tests {
     use crate as bevy_ecs;
     use crate::{
         bundle::Bundle,
-        change_detection::Ref,
+        change_detection::{FineGrained, Ref},
         component::{require, Component, ComponentId, RequiredComponents, RequiredComponentsError},
         entity::Entity,
         prelude::Or,
@@ -960,7 +960,9 @@ mod tests {
         let mut world = World::default();
         let e1 = world.spawn(A(0)).id();
 
-        fn get_added<Com: Component>(world: &mut World) -> Vec<Entity> {
+        fn get_added<Com: Component<ChangeDetection = FineGrained>>(
+            world: &mut World,
+        ) -> Vec<Entity> {
             world
                 .query_filtered::<Entity, Added<Com>>()
                 .iter(world)

@@ -1,6 +1,7 @@
 //! Batching functionality when GPU preprocessing isn't in use.
 
 use bevy_derive::{Deref, DerefMut};
+use bevy_ecs::change_detection::MutRef;
 use bevy_ecs::resource::Resource;
 use bevy_ecs::system::{Res, ResMut, StaticSystemParam};
 use smallvec::{smallvec, SmallVec};

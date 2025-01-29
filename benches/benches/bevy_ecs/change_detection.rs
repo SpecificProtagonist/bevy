@@ -1,6 +1,8 @@
 use core::hint::black_box;
 
+use bevy_derive::{Deref, DerefMut};
 use bevy_ecs::{
+    change_detection::FineGrained,
     component::{Component, Mutable},
     entity::Entity,
     prelude::{Added, Changed, EntityWorldMut, QueryState},
@@ -29,12 +31,13 @@ macro_rules! modify {
         )*
     };
 }
-#[derive(Component, Default)]
+#[derive(Component, Default, Deref, DerefMut)]
 #[component(storage = "Table")]
 struct Table(f32);
-#[derive(Component, Default)]
+#[derive(Component, Default, Deref, DerefMut)]
 #[component(storage = "SparseSet")]
 struct Sparse(f32);
+
 #[derive(Component, Default)]
 #[component(storage = "Table")]
 struct Data<const X: u16>(f32);
@@ -43,16 +46,13 @@ trait BenchModify {
     fn bench_modify(&mut self) -> f32;
 }
 
-impl BenchModify for Table {
+impl<T> BenchModify for T
+where
+    T: std::ops::DerefMut + std::ops::Deref<Target = f32>,
+{
     fn bench_modify(&mut self) -> f32 {
-        self.0 += 1f32;
-        black_box(self.0)
-    }
-}
-impl BenchModify for Sparse {
-    fn bench_modify(&mut self) -> f32 {
-        self.0 += 1f32;
-        black_box(self.0)
+        **self += 1f32;
+        black_box(**self)
     }
 }
 
@@ -85,7 +85,10 @@ fn generic_bench<P: Copy>(
     }
 }
 
-fn all_added_detection_generic<T: Component + Default>(group: &mut BenchGroup, entity_count: u32) {
+fn all_added_detection_generic<T>(group: &mut BenchGroup, entity_count: u32)
+where
+    T: Component<ChangeDetection = FineGrained> + Default,
+{
     group.bench_function(
         format!("{}_entities_{}", entity_count, core::any::type_name::<T>()),
         |bencher| {
@@ -125,10 +128,10 @@ fn all_added_detection(criterion: &mut Criterion) {
     }
 }
 
-fn all_changed_detection_generic<T: Component<Mutability = Mutable> + Default + BenchModify>(
-    group: &mut BenchGroup,
-    entity_count: u32,
-) {
+fn all_changed_detection_generic<T>(group: &mut BenchGroup, entity_count: u32)
+where
+    T: Component<Mutability = Mutable, ChangeDetection = FineGrained> + Default + BenchModify,
+{
     group.bench_function(
         format!("{}_entities_{}", entity_count, core::any::type_name::<T>()),
         |bencher| {
@@ -173,10 +176,10 @@ fn all_changed_detection(criterion: &mut Criterion) {
     }
 }
 
-fn few_changed_detection_generic<T: Component<Mutability = Mutable> + Default + BenchModify>(
-    group: &mut BenchGroup,
-    entity_count: u32,
-) {
+fn few_changed_detection_generic<T>(group: &mut BenchGroup, entity_count: u32)
+where
+    T: Component<Mutability = Mutable, ChangeDetection = FineGrained> + Default + BenchModify,
+{
     let ratio_to_modify = 0.1;
     let amount_to_modify = (entity_count as f32 * ratio_to_modify) as usize;
     group.bench_function(
@@ -187,12 +190,12 @@ fn few_changed_detection_generic<T: Component<Mutability = Mutable> + Default + 
                     let mut world = setup::<T>(entity_count);
                     world.clear_trackers();
                     let mut query = world.query::<&mut T>();
-                    let mut to_modify: Vec<bevy_ecs::prelude::Mut<T>> =
-                        query.iter_mut(&mut world).collect();
+                    let mut to_modify: Vec<_> = query.iter_mut(&mut world).collect();
                     to_modify.shuffle(&mut deterministic_rand());
                     for component in to_modify[0..amount_to_modify].iter_mut() {
                         black_box(component.bench_modify());
                     }
+                    drop(to_modify);
                     let query = generic_filter_query::<Changed<T>>(&mut world);
                     (world, query)
                 },
@@ -223,10 +226,10 @@ fn few_changed_detection(criterion: &mut Criterion) {
     }
 }
 
-fn none_changed_detection_generic<T: Component<Mutability = Mutable> + Default>(
-    group: &mut BenchGroup,
-    entity_count: u32,
-) {
+fn none_changed_detection_generic<T>(group: &mut BenchGroup, entity_count: u32)
+where
+    T: Component<Mutability = Mutable, ChangeDetection = FineGrained> + Default,
+{
     group.bench_function(
         format!("{}_entities_{}", entity_count, core::any::type_name::<T>()),
         |bencher| {
@@ -299,13 +302,13 @@ fn add_archetypes_entities<T: Component<Mutability = Mutable> + Default>(
         }
     }
 }
-fn multiple_archetype_none_changed_detection_generic<
-    T: Component<Mutability = Mutable> + Default + BenchModify,
->(
+fn multiple_archetype_none_changed_detection_generic<T>(
     group: &mut BenchGroup,
     archetype_count: u16,
     entity_count: u32,
-) {
+) where
+    T: Component<Mutability = Mutable, ChangeDetection = FineGrained> + Default + BenchModify,
+{
     group.bench_function(
         format!(
             "{}_archetypes_{}_entities_{}",

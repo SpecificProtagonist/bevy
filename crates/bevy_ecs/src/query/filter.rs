@@ -1,5 +1,6 @@
 use crate::{
     archetype::Archetype,
+    change_detection::FineGrained,
     component::{Component, ComponentId, Components, StorageType, Tick},
     entity::Entity,
     query::{DebugCheckedUnwrap, FilteredAccess, StorageSwitch, WorldQuery},
@@ -672,7 +673,10 @@ impl<T: Component> Clone for AddedFetch<'_, T> {
 /// This is sound because `update_component_access` adds read access for that component and panics when appropriate.
 /// `update_component_access` adds a `With` filter for a component.
 /// This is sound because `matches_component_set` returns whether the set contains that component.
-unsafe impl<T: Component> WorldQuery for Added<T> {
+unsafe impl<T> WorldQuery for Added<T>
+where
+    T: Component<ChangeDetection = FineGrained>,
+{
     type Item<'w> = bool;
     type Fetch<'w> = AddedFetch<'w, T>;
     type State = ComponentId;
@@ -797,7 +801,10 @@ unsafe impl<T: Component> WorldQuery for Added<T> {
 }
 
 // SAFETY: WorldQuery impl performs only read access on ticks
-unsafe impl<T: Component> QueryFilter for Added<T> {
+unsafe impl<T> QueryFilter for Added<T>
+where
+    T: Component<ChangeDetection = FineGrained>,
+{
     const IS_ARCHETYPAL: bool = false;
     #[inline(always)]
     unsafe fn filter_fetch(
@@ -905,7 +912,10 @@ impl<T: Component> Clone for ChangedFetch<'_, T> {
 /// This is sound because `update_component_access` add read access for that component and panics when appropriate.
 /// `update_component_access` adds a `With` filter for a component.
 /// This is sound because `matches_component_set` returns whether the set contains that component.
-unsafe impl<T: Component> WorldQuery for Changed<T> {
+unsafe impl<T> WorldQuery for Changed<T>
+where
+    T: Component<ChangeDetection = FineGrained>,
+{
     type Item<'w> = bool;
     type Fetch<'w> = ChangedFetch<'w, T>;
     type State = ComponentId;
@@ -1030,7 +1040,10 @@ unsafe impl<T: Component> WorldQuery for Changed<T> {
 }
 
 // SAFETY: WorldQuery impl performs only read access on ticks
-unsafe impl<T: Component> QueryFilter for Changed<T> {
+unsafe impl<T> QueryFilter for Changed<T>
+where
+    T: Component<ChangeDetection = FineGrained>,
+{
     const IS_ARCHETYPAL: bool = false;
 
     #[inline(always)]

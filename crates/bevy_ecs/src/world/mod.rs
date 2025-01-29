@@ -3762,7 +3762,7 @@ impl<T: Default> FromWorld for T {
 mod tests {
     use super::{FromWorld, World};
     use crate::{
-        change_detection::DetectChangesMut,
+        change_detection::{ChangeDetectionType, DetectChangesMut},
         component::{ComponentDescriptor, ComponentInfo, StorageType},
         entity::hash_set::EntityHashSet,
         ptr::OwningPtr,
@@ -4062,6 +4062,7 @@ mod tests {
                     DROP_COUNT.fetch_add(1, Ordering::SeqCst);
                 }),
                 true,
+                ChangeDetectionType::FineGrained,
             )
         };
 

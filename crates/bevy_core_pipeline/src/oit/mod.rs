@@ -2,7 +2,7 @@
 
 use bevy_app::prelude::*;
 use bevy_asset::{load_internal_asset, Handle};
-use bevy_ecs::{component::*, prelude::*};
+use bevy_ecs::{change_detection, component::*, prelude::*};
 use bevy_math::UVec2;
 use bevy_platform_support::collections::HashSet;
 use bevy_platform_support::time::Instant;
@@ -68,6 +68,7 @@ impl Default for OrderIndependentTransparencySettings {
 impl Component for OrderIndependentTransparencySettings {
     const STORAGE_TYPE: StorageType = StorageType::SparseSet;
     type Mutability = Mutable;
+    type ChangeDetection = change_detection::FineGrained;
 
     fn register_component_hooks(hooks: &mut ComponentHooks) {
         hooks.on_add(|world, context| {

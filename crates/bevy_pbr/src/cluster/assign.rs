@@ -1,6 +1,7 @@
 //! Assigning objects to clusters.
 
 use bevy_ecs::{
+    change_detection::MutRef,
     entity::Entity,
     query::{Has, With},
     system::{Commands, Local, Query, Res, ResMut},

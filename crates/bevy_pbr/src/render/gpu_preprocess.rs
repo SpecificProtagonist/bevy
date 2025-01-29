@@ -20,6 +20,7 @@ use bevy_core_pipeline::{
 };
 use bevy_derive::{Deref, DerefMut};
 use bevy_ecs::{
+    change_detection::MutRef,
     component::Component,
     entity::Entity,
     prelude::resource_exists,

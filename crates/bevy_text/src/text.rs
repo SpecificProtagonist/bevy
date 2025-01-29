@@ -7,7 +7,7 @@ use crate::{Font, TextLayoutInfo, TextSpanAccess, TextSpanComponent};
 use bevy_asset::Handle;
 use bevy_color::Color;
 use bevy_derive::{Deref, DerefMut};
-use bevy_ecs::{prelude::*, reflect::ReflectComponent};
+use bevy_ecs::{change_detection::FineGrained, prelude::*, reflect::ReflectComponent};
 use bevy_reflect::prelude::*;
 use bevy_utils::once;
 use cosmic_text::{Buffer, Metrics};
@@ -439,7 +439,7 @@ pub enum FontSmoothing {
 ///
 /// Generic over the root text component and text span component. For example, [`Text2d`](crate::Text2d)/[`TextSpan`] for
 /// 2d or `Text`/[`TextSpan`] for UI.
-pub fn detect_text_needs_rerender<Root: Component>(
+pub fn detect_text_needs_rerender<Root>(
     changed_roots: Query<
         Entity,
         (
@@ -473,7 +473,9 @@ pub fn detect_text_needs_rerender<Root: Component>(
         Option<&mut ComputedTextBlock>,
         Has<TextSpan>,
     )>,
-) {
+) where
+    Root: Component<ChangeDetection = FineGrained>,
+{
     // Root entity:
     // - Root component changed.
     // - TextFont on root changed.

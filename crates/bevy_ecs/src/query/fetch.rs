@@ -1,7 +1,7 @@
 use crate::{
     archetype::{Archetype, Archetypes},
     bundle::Bundle,
-    change_detection::{MaybeThinSlicePtrLocation, Ticks, TicksMut},
+    change_detection::{ChangeDetection, FineGrained, MaybeThinSlicePtrLocation, Ticks, TicksMut},
     component::{Component, ComponentId, Components, Mutable, StorageType, Tick},
     entity::{Entities, Entity, EntityLocation},
     query::{Access, DebugCheckedUnwrap, FilteredAccess, WorldQuery},
@@ -1247,7 +1247,10 @@ impl<T: Component> Copy for RefFetch<'_, T> {}
 /// This is sound because `update_component_access` and `update_archetype_component_access` add read access for that component and panic when appropriate.
 /// `update_component_access` adds a `With` filter for a component.
 /// This is sound because `matches_component_set` returns whether the set contains that component.
-unsafe impl<'__w, T: Component> WorldQuery for Ref<'__w, T> {
+unsafe impl<'__w, T> WorldQuery for Ref<'__w, T>
+where
+    T: Component<ChangeDetection = FineGrained>,
+{
     type Item<'w> = Ref<'w, T>;
     type Fetch<'w> = RefFetch<'w, T>;
     type State = ComponentId;
@@ -1409,12 +1412,18 @@ unsafe impl<'__w, T: Component> WorldQuery for Ref<'__w, T> {
 }
 
 /// SAFETY: `Self` is the same as `Self::ReadOnly`
-unsafe impl<'__w, T: Component> QueryData for Ref<'__w, T> {
+unsafe impl<'__w, T> QueryData for Ref<'__w, T>
+where
+    T: Component<ChangeDetection = FineGrained>,
+{
     type ReadOnly = Self;
 }
 
 /// SAFETY: access is read only
-unsafe impl<'__w, T: Component> ReadOnlyQueryData for Ref<'__w, T> {}
+unsafe impl<'__w, T> ReadOnlyQueryData for Ref<'__w, T> where
+    T: Component<ChangeDetection = FineGrained>
+{
+}
 
 /// The [`WorldQuery::Fetch`] type for `&mut T`.
 pub struct WriteFetch<'w, T: Component> {
@@ -1441,18 +1450,24 @@ impl<T: Component> Clone for WriteFetch<'_, T> {
 }
 impl<T: Component> Copy for WriteFetch<'_, T> {}
 
+/// Shorthand for the type fetched from `&mut T` (where T is a component).
+pub type ComponentWriteItem<'w, T> =
+    <<T as Component>::ChangeDetection as ChangeDetection>::DefaultWriteItem<'w, T>;
+
 /// SAFETY:
 /// `fetch` accesses a single component mutably.
 /// This is sound because `update_component_access` and `update_archetype_component_access` add write access for that component and panic when appropriate.
 /// `update_component_access` adds a `With` filter for a component.
 /// This is sound because `matches_component_set` returns whether the set contains that component.
 unsafe impl<'__w, T: Component> WorldQuery for &'__w mut T {
-    type Item<'w> = Mut<'w, T>;
+    type Item<'w> = ComponentWriteItem<'w, T>;
     type Fetch<'w> = WriteFetch<'w, T>;
     type State = ComponentId;
 
-    fn shrink<'wlong: 'wshort, 'wshort>(item: Mut<'wlong, T>) -> Mut<'wshort, T> {
-        item
+    fn shrink<'wlong: 'wshort, 'wshort>(
+        item: ComponentWriteItem<'wlong, T>,
+    ) -> ComponentWriteItem<'wshort, T> {
+        <T::ChangeDetection as ChangeDetection>::shrink(item)
     }
 
     fn shrink_fetch<'wlong: 'wshort, 'wshort>(fetch: Self::Fetch<'wlong>) -> Self::Fetch<'wshort> {
@@ -1552,29 +1567,29 @@ unsafe impl<'__w, T: Component> WorldQuery for &'__w mut T {
                 #[cfg(feature = "track_location")]
                 let caller = unsafe { _callers.get(table_row.as_usize()) };
 
-                Mut {
-                    value: component.deref_mut(),
-                    ticks: TicksMut {
+                T::ChangeDetection::new(
+                    component.deref_mut(),
+                    TicksMut {
                         added: added.deref_mut(),
                         changed: changed.deref_mut(),
                         this_run: fetch.this_run,
                         last_run: fetch.last_run,
                     },
                     #[cfg(feature = "track_location")]
-                    changed_by: caller.deref_mut(),
-                }
+                    caller.deref_mut(),
+                )
             },
             |sparse_set| {
                 // SAFETY: The caller ensures `entity` is in range.
                 let (component, ticks, _caller) =
                     unsafe { sparse_set.get_with_ticks(entity).debug_checked_unwrap() };
 
-                Mut {
-                    value: component.assert_unique().deref_mut(),
-                    ticks: TicksMut::from_tick_cells(ticks, fetch.last_run, fetch.this_run),
+                T::ChangeDetection::new(
+                    component.assert_unique().deref_mut(),
+                    TicksMut::from_tick_cells(ticks, fetch.last_run, fetch.this_run),
                     #[cfg(feature = "track_location")]
-                    changed_by: _caller.deref_mut(),
-                }
+                    _caller.deref_mut(),
+                )
             },
         )
     }
@@ -1621,7 +1636,10 @@ unsafe impl<'__w, T: Component<Mutability = Mutable>> QueryData for &'__w mut T 
 /// This is sound because `update_component_access` and `update_archetype_component_access` add write access for that component and panic when appropriate.
 /// `update_component_access` adds a `With` filter for a component.
 /// This is sound because `matches_component_set` returns whether the set contains that component.
-unsafe impl<'__w, T: Component> WorldQuery for Mut<'__w, T> {
+unsafe impl<'__w, T: Component> WorldQuery for Mut<'__w, T>
+where
+    T: Component<ChangeDetection = FineGrained>,
+{
     type Item<'w> = Mut<'w, T>;
     type Fetch<'w> = WriteFetch<'w, T>;
     type State = ComponentId;
@@ -1713,7 +1731,10 @@ unsafe impl<'__w, T: Component> WorldQuery for Mut<'__w, T> {
 }
 
 // SAFETY: access of `Ref<T>` is a subset of `Mut<T>`
-unsafe impl<'__w, T: Component> QueryData for Mut<'__w, T> {
+unsafe impl<'__w, T> QueryData for Mut<'__w, T>
+where
+    T: Component<ChangeDetection = FineGrained>,
+{
     type ReadOnly = Ref<'__w, T>;
 }
 

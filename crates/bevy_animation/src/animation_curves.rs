@@ -94,7 +94,10 @@ use crate::{
     prelude::{Animatable, BlendInput},
     AnimationEntityMut, AnimationEvaluationError,
 };
-use bevy_ecs::component::{Component, Mutable};
+use bevy_ecs::{
+    change_detection::MutRef,
+    component::{Component, Mutable},
+};
 use bevy_math::curve::{
     cores::{UnevenCore, UnevenCoreError},
     iterable::IterableCurve,
@@ -117,6 +120,7 @@ use downcast_rs::{impl_downcast, Downcast};
 ///     # use bevy_reflect::Reflect;
 ///     # use std::any::TypeId;
 ///     # use bevy_render::camera::{Projection, PerspectiveProjection};
+///     # use bevy_ecs::prelude::MutRef;
 ///     #[derive(Reflect)]
 ///     struct FieldOfViewProperty;
 ///
@@ -148,7 +152,7 @@ use downcast_rs::{impl_downcast, Downcast};
 ///
 ///     # use bevy_animation::{AnimationClip, AnimationTargetId, VariableCurve, AnimationEntityMut, AnimationEvaluationError, animation_curves::EvaluatorId};
 ///     # use bevy_animation::prelude::{AnimatableProperty, AnimatableKeyframeCurve, AnimatableCurve};
-///     # use bevy_ecs::name::Name;
+///     # use bevy_ecs::{name::Name, prelude::MutRef};
 ///     # use bevy_reflect::Reflect;
 ///     # use bevy_render::camera::{Projection, PerspectiveProjection};
 ///     # use std::any::TypeId;

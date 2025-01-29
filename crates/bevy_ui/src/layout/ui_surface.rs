@@ -4,6 +4,7 @@ use bevy_platform_support::collections::hash_map::Entry;
 use taffy::TaffyTree;
 
 use bevy_ecs::{
+    change_detection::MutRef,
     entity::{hash_map::EntityHashMap, Entity},
     prelude::Resource,
 };

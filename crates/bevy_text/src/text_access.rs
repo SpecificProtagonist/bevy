@@ -1,5 +1,6 @@
 use bevy_color::Color;
 use bevy_ecs::{
+    change_detection::{FineGrained, MutRef},
     component::Mutable,
     prelude::*,
     system::{Query, SystemParam},
@@ -8,7 +9,7 @@ use bevy_ecs::{
 use crate::{TextColor, TextFont, TextSpan};
 
 /// Helper trait for using the [`TextReader`] and [`TextWriter`] system params.
-pub trait TextSpanAccess: Component<Mutability = Mutable> {
+pub trait TextSpanAccess: Component<Mutability = Mutable, ChangeDetection = FineGrained> {
     /// Gets the text span's string.
     fn read_span(&self) -> &str;
     /// Gets mutable reference to the text span's string.

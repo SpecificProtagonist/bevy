@@ -62,7 +62,7 @@ use crate::{
     change_detection::Mut,
     component::{ComponentId, ComponentMutability},
     entity::Entity,
-    prelude::Component,
+    prelude::{Component, MutRef},
     world::{
         unsafe_world_cell::UnsafeEntityCell, EntityMut, EntityWorldMut, FilteredEntityMut,
         FilteredEntityRef, World,

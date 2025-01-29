@@ -4,7 +4,7 @@ use crate::{
     self as bevy_ecs,
     archetype::ArchetypeFlags,
     bundle::BundleInfo,
-    change_detection::MAX_CHANGE_AGE,
+    change_detection::{ChangeDetection, ChangeDetectionType, MAX_CHANGE_AGE},
     entity::{ComponentCloneCtx, Entity},
     query::DebugCheckedUnwrap,
     resource::Resource,
@@ -399,6 +399,16 @@ pub trait Component: Send + Sync + 'static {
     /// * For a component to be mutable, this type must be [`Mutable`].
     /// * For a component to be immutable, this type must be [`Immutable`].
     type Mutability: ComponentMutability;
+
+    /// A marker type to assist Bevy with determining whether to track when this component
+    /// was last mutated. See [`ChangeDetection`] for details.
+    ///
+    /// * For fine grained change detection, this must be [`FineGrained`].
+    /// * For no change detection, this type must be [`Immutable`].
+    ///
+    /// [`FineGrained`]: `crate::change_detection::FineGrained`
+    /// [`NoChangeDetection`]: `crate::change_detection::NoChangeDetection`
+    type ChangeDetection: ChangeDetection;
 
     /// Called when registering this component, allowing mutable access to its [`ComponentHooks`].
     fn register_component_hooks(_hooks: &mut ComponentHooks) {}
@@ -899,6 +909,11 @@ pub struct ComponentDescriptor {
     // None if the underlying type doesn't need to be dropped
     drop: Option<for<'a> unsafe fn(OwningPtr<'a>)>,
     mutable: bool,
+    #[expect(
+        dead_code,
+        reason = "This will be used to only allocate change ticks when necessary"
+    )]
+    change_detection: ChangeDetectionType,
 }
 
 // We need to ignore the `drop` field in our `Debug` impl
@@ -936,6 +951,7 @@ impl ComponentDescriptor {
             layout: Layout::new::<T>(),
             drop: needs_drop::<T>().then_some(Self::drop_ptr::<T> as _),
             mutable: T::Mutability::MUTABLE,
+            change_detection: T::ChangeDetection::CHANGE_DETECTION,
         }
     }
 
@@ -950,6 +966,7 @@ impl ComponentDescriptor {
         layout: Layout,
         drop: Option<for<'a> unsafe fn(OwningPtr<'a>)>,
         mutable: bool,
+        change_detection: ChangeDetectionType,
     ) -> Self {
         Self {
             name: name.into(),
@@ -959,6 +976,7 @@ impl ComponentDescriptor {
             layout,
             drop,
             mutable,
+            change_detection,
         }
     }
 
@@ -976,6 +994,7 @@ impl ComponentDescriptor {
             layout: Layout::new::<T>(),
             drop: needs_drop::<T>().then_some(Self::drop_ptr::<T> as _),
             mutable: true,
+            change_detection: ChangeDetectionType::FineGrained,
         }
     }
 
@@ -988,6 +1007,7 @@ impl ComponentDescriptor {
             layout: Layout::new::<T>(),
             drop: needs_drop::<T>().then_some(Self::drop_ptr::<T> as _),
             mutable: true,
+            change_detection: ChangeDetectionType::FineGrained,
         }
     }
 
