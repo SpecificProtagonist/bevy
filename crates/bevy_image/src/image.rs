@@ -728,7 +728,20 @@ impl Image {
         image
     }
 
-    /// Exactly the same as [`Image::new`], but doesn't initialize the image
+    /// Creates a new image described by this metadata, with its CPU-side data zero-initialized.
+    pub fn new_zeroed(
+        size: Extent3d,
+        dimension: TextureDimension,
+        format: TextureFormat,
+        asset_usage: RenderAssetUsages,
+    ) -> Self {
+        Self {
+            data: Some(vec![0; size.volume() * format.pixel_size()]),
+            ..Self::new_uninit(size, dimension, format, asset_usage)
+        }
+    }
+
+    /// Creates a new image described by this metadata, but doesn't initialize its CPU-side data.
     pub fn new_uninit(
         size: Extent3d,
         dimension: TextureDimension,
