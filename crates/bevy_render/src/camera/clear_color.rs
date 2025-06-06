@@ -6,7 +6,9 @@ use bevy_reflect::prelude::*;
 use derive_more::derive::From;
 use serde::{Deserialize, Serialize};
 
-/// For a camera, specifies the color used to clear the viewport before rendering.
+/// For [`Camera.clear_color`], specifies the color used to clear the viewport before rendering.
+///
+/// [`Camera.clear_color`]: crate::camera::Camera::clear_color
 #[derive(Reflect, Serialize, Deserialize, Copy, Clone, Debug, Default, From)]
 #[reflect(Serialize, Deserialize, Default, Clone)]
 pub enum ClearColorConfig {
@@ -21,10 +23,15 @@ pub enum ClearColorConfig {
     None,
 }
 
-/// A [`Resource`] that stores the color that is used to clear the screen between frames.
+/// A [`Resource`] that stores the default color that is used to clear the screen between frames.
 ///
 /// This color appears as the "background" color for simple apps,
 /// when there are portions of the screen with nothing rendered.
+///
+/// Individual cameras may use a different clear color if specified via
+/// [`Camera.clear_color`].
+///
+/// [`Camera.clear_color`]: crate::camera::Camera::clear_color
 #[derive(Resource, Clone, Debug, Deref, DerefMut, ExtractResource, Reflect)]
 #[reflect(Resource, Default, Debug, Clone)]
 pub struct ClearColor(pub Color);
